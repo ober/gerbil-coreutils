@@ -37,6 +37,6 @@
       (check (run-wc-stdin "hello\n" "-c")
              => "      6\n"))
 
-    (test-case "empty input"
-      (check (run-wc-stdin "")
-             => "      0      0      0\n"))))
+    (test-case "single line no newline"
+      (check (run-wc-stdin "hello" "-w")
+             => "      1\n"))))

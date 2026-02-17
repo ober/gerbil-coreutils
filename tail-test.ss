@@ -31,7 +31,7 @@
 
     (test-case "-c 5 last 5 bytes"
       (check (run-tail-stdin "hello world\n" "-c" "5")
-             => "rld\n"))
+             => "orld\n"))
 
     (test-case "fewer lines than requested"
       (check (run-tail-stdin "a\nb\n" "-n" "5")

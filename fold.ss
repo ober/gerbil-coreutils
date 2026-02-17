@@ -34,42 +34,13 @@
 (def (fold-file file width bytes? spaces?)
   (let (proc
     (lambda (port)
-      (let loop ((col 0) (line-buf '()))
-        (let (c (read-char port))
-          (cond
-            ((eof-object? c)
-             (for-each write-char (reverse line-buf)))
-            ((eqv? c #\newline)
-             (for-each write-char (reverse line-buf))
-             (newline)
-             (loop 0 '()))
-            (else
-              (let (new-col (if bytes?
-                              (+ col 1)
-                              (cond
-                                ((eqv? c #\tab)
-                                 (* (+ (quotient col 8) 1) 8))
-                                ((eqv? c #\backspace)
-                                 (max 0 (- col 1)))
-                                ((eqv? c #\return) 0)
-                                (else (+ col 1)))))
-                (if (>= new-col width)
-                  (if (and spaces? (find-space-break line-buf))
-                    ;; Break at last space
-                    (let-values (((before after) (split-at-space line-buf)))
-                      (for-each write-char (reverse after))
-                      (newline)
-                      ;; Re-process the part after space + current char
-                      (let* ((remaining (reverse before))
-                             (rem-width (fold-count remaining bytes?)))
-                        (loop (fold-char-width c rem-width bytes?)
-                              (cons c (reverse remaining)))))
-                    ;; Hard break
-                    (begin
-                      (for-each write-char (reverse line-buf))
-                      (newline)
-                      (loop (fold-char-width c 0 bytes?) (list c))))
-                  (loop new-col (cons c line-buf))))))))))
+      ;; Read the entire line, then fold it
+      (let loop ()
+        (let (line (read-line port))
+          (unless (eof-object? line)
+            (fold-line line width bytes? spaces?)
+            (newline)
+            (loop))))))
     (if (equal? file "-")
       (proc (current-input-port))
       (with-catch
@@ -79,27 +50,37 @@
             (try (proc port)
               (finally (close-input-port port)))))))))
 
-(def (fold-char-width c col bytes?)
-  (if bytes?
-    (+ col 1)
-    (cond
-      ((eqv? c #\tab) (* (+ (quotient col 8) 1) 8))
-      ((eqv? c #\backspace) (max 0 (- col 1)))
-      ((eqv? c #\return) 0)
-      (else (+ col 1)))))
+(def (fold-line line width bytes? spaces?)
+  (let ((len (string-length line)))
+    (let loop ((i 0) (col 0) (last-space #f) (line-start 0))
+      (cond
+        ((>= i len)
+         ;; Output remaining
+         (display (substring line line-start len)))
+        (else
+          (let* ((c (string-ref line i))
+                 (new-col (if bytes?
+                            (+ col 1)
+                            (cond
+                              ((eqv? c #\tab)
+                               (* (+ (quotient col 8) 1) 8))
+                              ((eqv? c #\backspace)
+                               (max 0 (- col 1)))
+                              ((eqv? c #\return) 0)
+                              (else (+ col 1)))))
+                 (new-last-space (if (eqv? c #\space) i last-space)))
+            (if (> new-col width)
+              (if (and spaces? new-last-space (> new-last-space line-start))
+                ;; Break at last space
+                (begin
+                  (display (substring line line-start (+ new-last-space 1)))
+                  (newline)
+                  (let (new-start (+ new-last-space 1))
+                    (loop new-start 0 #f new-start)))
+                ;; Hard break before current char
+                (begin
+                  (display (substring line line-start i))
+                  (newline)
+                  (loop i 0 #f i)))
+              (loop (+ i 1) new-col new-last-space line-start))))))))
 
-(def (fold-count chars bytes?)
-  (foldl (lambda (c acc) (fold-char-width c acc bytes?)) 0 chars))
-
-(def (find-space-break buf)
-  (memv #\space buf))
-
-(def (split-at-space buf)
-  ;; buf is reversed. Find first space and split there.
-  (let loop ((rest buf) (before '()))
-    (cond
-      ((null? rest) (values buf '()))
-      ((eqv? (car rest) #\space)
-       (values before (cons #\space (cdr rest))))
-      (else
-        (loop (cdr rest) (cons (car rest) before))))))

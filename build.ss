@@ -5,6 +5,7 @@
   '("common"
     "common/io"
     "common/version"
+    ;; Phase 1
     (exe: "true" bin: "true")
     (exe: "false" bin: "false")
     (exe: "yes" bin: "yes")
@@ -17,4 +18,15 @@
     (exe: "basename" bin: "basename")
     (exe: "dirname" bin: "dirname")
     (exe: "link" bin: "link")
-    (exe: "unlink" bin: "unlink")))
+    (exe: "unlink" bin: "unlink")
+    ;; Phase 2
+    (exe: "cat" bin: "cat")
+    (exe: "head" bin: "head")
+    (exe: "tail" bin: "tail")
+    (exe: "wc" bin: "wc")
+    (exe: "tee" bin: "tee")
+    (exe: "tac" bin: "tac")
+    (exe: "nl" bin: "nl")
+    (exe: "fold" bin: "fold")
+    (exe: "expand" bin: "expand")
+    (exe: "unexpand" bin: "unexpand")))

@@ -1,0 +1,126 @@
+(export main)
+
+(import :gerbil-coreutils/common
+        :gerbil-coreutils/common/version
+        :std/cli/getopt
+        :std/sugar
+        :std/misc/ports
+        :std/format
+        :std/srfi/13)
+
+(def (main . args)
+  (parameterize ((program-name "uniq"))
+    (call-with-getopt
+      (lambda (opt)
+        (let-hash opt
+          (let ((files .rest)
+                (count? .?count)
+                (repeated? .?repeated)
+                (unique? .?unique)
+                (ignore-case? .?ignore-case)
+                (skip-fields (if .?skip-fields (string->number .?skip-fields) 0))
+                (skip-chars (if .?skip-chars (string->number .?skip-chars) 0))
+                (check-chars (if .?check-chars (string->number .?check-chars) #f))
+                (zero-term? .?zero-terminated))
+            (let* ((input (if (or (null? files) (equal? (car files) "-"))
+                            "-" (car files)))
+                   (output (if (and (pair? files) (pair? (cdr files)))
+                             (cadr files) #f)))
+              (uniq-process input output count? repeated? unique?
+                            ignore-case? skip-fields skip-chars
+                            check-chars zero-term?)))))
+      args
+      program: "uniq"
+      help: "Filter adjacent matching lines from INPUT, writing to OUTPUT."
+      (flag 'count "-c" "--count"
+        help: "prefix lines by the number of occurrences")
+      (flag 'repeated "-d" "--repeated"
+        help: "only print duplicate lines, one for each group")
+      (flag 'unique "-u" "--unique"
+        help: "only print unique lines")
+      (option 'skip-fields "-f" "--skip-fields"
+        help: "avoid comparing the first N fields" default: #f)
+      (option 'skip-chars "-s" "--skip-chars"
+        help: "avoid comparing the first N characters" default: #f)
+      (option 'check-chars "-w" "--check-chars"
+        help: "compare no more than N characters" default: #f)
+      (flag 'ignore-case "-i" "--ignore-case"
+        help: "ignore differences in case when comparing")
+      (flag 'zero-terminated "-z" "--zero-terminated"
+        help: "line delimiter is NUL, not newline")
+      (rest-arguments 'rest))))
+
+(def (uniq-process input output count? repeated? unique?
+                    ignore-case? skip-fields skip-chars check-chars zero-term?)
+  (let ((in-port (if (equal? input "-")
+                   (current-input-port)
+                   (open-input-file input)))
+        (out-port (if output
+                    (open-output-file output)
+                    (current-output-port)))
+        (line-delim (if zero-term? #\nul #\newline))
+        (eol (if zero-term? "\0" "\n")))
+    (let loop ((prev #f) (count 0))
+      (let (line (read-line in-port line-delim))
+        (cond
+          ((eof-object? line)
+           ;; Flush last group
+           (when prev
+             (output-line out-port prev count count? repeated? unique? eol)))
+          ((not prev)
+           (loop line 1))
+          ((lines-equal? prev line ignore-case? skip-fields skip-chars check-chars)
+           (loop prev (+ count 1)))
+          (else
+           (output-line out-port prev count count? repeated? unique? eol)
+           (loop line 1)))))
+    (when (and output) (close-output-port out-port))
+    (unless (equal? input "-") (close-input-port in-port))))
+
+(def (output-line port line count count? repeated? unique? eol)
+  (let ((show? (cond
+                 ((and repeated? unique?) #f)  ;; contradictory
+                 (repeated? (> count 1))
+                 (unique? (= count 1))
+                 (else #t))))
+    (when show?
+      (when count?
+        (display (format "~7d " count) port))
+      (display line port)
+      (display eol port))))
+
+(def (lines-equal? a b ignore-case? skip-fields skip-chars check-chars)
+  (let* ((a (skip-line a skip-fields skip-chars))
+         (b (skip-line b skip-fields skip-chars))
+         (a (if check-chars (string-take a (min check-chars (string-length a))) a))
+         (b (if check-chars (string-take b (min check-chars (string-length b))) b)))
+    (if ignore-case?
+      (string-ci= a b)
+      (string= a b))))
+
+(def (skip-line line skip-fields skip-chars)
+  (let* ((pos 0)
+         (len (string-length line))
+         ;; Skip fields (sequences of blanks then non-blanks)
+         (pos (let loop ((p pos) (fields skip-fields))
+                (if (or (<= fields 0) (>= p len)) p
+                  (let ((p (skip-blanks line p len)))
+                    (let ((p (skip-non-blanks line p len)))
+                      (loop p (- fields 1)))))))
+         ;; Skip chars
+         (pos (min (+ pos skip-chars) len)))
+    (substring line pos len)))
+
+(def (skip-blanks line pos len)
+  (if (and (< pos len)
+           (let (c (string-ref line pos))
+             (or (eqv? c #\space) (eqv? c #\tab))))
+    (skip-blanks line (+ pos 1) len)
+    pos))
+
+(def (skip-non-blanks line pos len)
+  (if (and (< pos len)
+           (let (c (string-ref line pos))
+             (not (or (eqv? c #\space) (eqv? c #\tab)))))
+    (skip-non-blanks line (+ pos 1) len)
+    pos))
